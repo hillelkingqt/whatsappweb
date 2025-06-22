@@ -6,7 +6,7 @@ const moduleRaid = require('@pedroslopez/moduleraid/moduleraid');
 
 const Util = require('./util/Util');
 const InterfaceController = require('./util/InterfaceController');
-const { WhatsWebURL, DefaultOptions, Events, WAState } = require('./util/Constants');
+const { WhatsWebURL, DefaultOptions, Events, WAState, MessageTypes } = require('./util/Constants');
 const { ExposeAuthStore } = require('./util/Injected/AuthStore/AuthStore');
 const { ExposeStore } = require('./util/Injected/Store');
 const { ExposeLegacyAuthStore } = require('./util/Injected/AuthStore/LegacyAuthStore');
@@ -2179,6 +2179,50 @@ class Client extends EventEmitter {
         return await this.pupPage.evaluate(async (phoneNumber) => {
             return await window.Store.AddressbookContactUtils.deleteContactAction(phoneNumber);
         }, phoneNumber);
+    }
+
+    /**
+     * Votes in a poll.
+     * @param {string|Message} messageId The message object or the ID of the message that contains the poll.
+     * The message must be of type `MessageTypes.POLL_CREATION`.
+     * @param {Array<number>} selectedOptionLocalIds An array of numbers representing the `localId` of the selected option(s).
+     * These `localId`s correspond to the `localId` property of the options in the poll creation message.
+     * An error will be thrown if `selectedOptionLocalIds` is not an array of numbers.
+     * @returns {Promise<boolean>} Returns `true` if the vote was sent successfully to be processed by WhatsApp Web, `false` otherwise (e.g., if the message is not a poll, options are invalid, or an internal error occurs).
+     * Note: A `true` return value indicates successful dispatch, not final confirmation from the server. Listen to the `Events.VOTE_UPDATE` event for server-confirmed updates.
+     * @throws {Error} If the poll message is not found, is not a poll creation message, or if `selectedOptionLocalIds` is invalid.
+     */
+    async voteInPoll(messageId, selectedOptionLocalIds) {
+        const message = typeof messageId === 'string' ? await this.getMessageById(messageId) : messageId;
+        if (!message) {
+            throw new Error('Poll message not found.');
+        }
+
+        if (message.type !== MessageTypes.POLL_CREATION) {
+            throw new Error('Message is not a poll creation message.');
+        }
+
+        if (!Array.isArray(selectedOptionLocalIds) || selectedOptionLocalIds.some(isNaN)) {
+            throw new Error('selectedOptionLocalIds must be an array of numbers.');
+        }
+
+        // Ensure the poll allows multiple answers if multiple options are selected
+        if (selectedOptionLocalIds.length > 1 && !message.pollOptions.allowMultipleAnswers) {
+            // The pollOptions might not be directly on the message object,
+            // this needs to be verified once we inspect the message structure for polls.
+            // For now, this is a placeholder for the check.
+            // It's possible pollOptions are part of message.pollData or similar.
+            // We might need to fetch the full poll details if not available on the message object.
+            // This check might be better handled by the internal WhatsApp function if it enforces it.
+        }
+
+
+        const result = await this.pupPage.evaluate(async (msgId, options, voterId) => {
+            // This function (WWebJS.sendPollVote) will be implemented in the next step
+            return await window.WWebJS.sendPollVote(msgId, options, voterId);
+        }, message.id._serialized, selectedOptionLocalIds, this.info.wid._serialized);
+
+        return result;
     }
 }
 

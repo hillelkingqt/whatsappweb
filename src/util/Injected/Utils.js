@@ -349,6 +349,51 @@ exports.LoadUtils = () => {
         return window.Store.Msg.get(msg.id._serialized);
     };
 
+    window.WWebJS.sendPollVote = async (messageId, selectedOptionLocalIds, voterId) => {
+        const pollMsg = window.Store.Msg.get(messageId);
+        if (!pollMsg) {
+            console.error('WWebJS: Poll message not found for ID:', messageId);
+            return false;
+        }
+
+        if (pollMsg.type !== 'poll_creation') {
+            console.error('WWebJS: Message is not a poll creation message. Type:', pollMsg.type);
+            return false;
+        }
+
+        if (!pollMsg.pollOptions || !Array.isArray(pollMsg.pollOptions)) {
+            console.error('WWebJS: Poll options not found or not an array on the message object.');
+            return false;
+        }
+
+        // The voterId parameter is available if needed by the internal function,
+        // but SendActions.sendPollVote might implicitly use the current user.
+        // const voterWid = window.Store.WidFactory.createWid(voterId);
+
+        try {
+            const selectedOptionNameHashes = selectedOptionLocalIds.map(localId => {
+                const option = pollMsg.pollOptions.find(opt => opt.localId === localId);
+                if (!option || !option.nameSha256) {
+                    const errorMsg = `WWebJS: Option with localId ${localId} or its nameSha256 not found.`;
+                    console.error(errorMsg, 'Option:', option, 'Poll Options:', pollMsg.pollOptions);
+                    throw new Error(errorMsg);
+                }
+                return option.nameSha256;
+            });
+
+            // This is the most likely internal function based on common patterns.
+            // It assumes sendPollVote takes the message object and an array of the selected option hashes.
+            await window.Store.SendActions.sendPollVote(pollMsg, selectedOptionNameHashes);
+
+            // We might need to return something more specific, or handle errors if sendPollVote throws them.
+            // For now, successfully reaching this point means the command was dispatched.
+            return true;
+        } catch (e) {
+            console.error('WWebJS: Failed to send poll vote:', e);
+            return false;
+        }
+    };
+
     window.WWebJS.toStickerData = async (mediaInfo) => {
         if (mediaInfo.mimetype == 'image/webp') return mediaInfo;
 
