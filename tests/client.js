@@ -678,4 +678,99 @@ END:VCARD`;
             });
         });
     });
+
+    describe('Poll Voting', function() {
+        let client;
+        let pupPageEvaluateStub;
+        let getMessageByIdStub;
+
+        beforeEach(async function() {
+            // Create a new client for each test to ensure isolation
+            client = helper.createClient({ authenticated: true });
+            // Simulate client initialization for an authenticated client
+            client.info = { wid: { _serialized: 'client@c.us' } }; // Mock client info
+
+            // Stubbing pupPage.evaluate before initialize if it's called during setup
+            // For an already authenticated client, initialize might not need heavy pupPage interaction for these tests
+            pupPageEvaluateStub = sinon.stub(client.pupPage, 'evaluate');
+            getMessageByIdStub = sinon.stub(client, 'getMessageById');
+        });
+
+        afterEach(function() {
+            sinon.restore(); // Restore all stubs and spies
+            // No client.destroy() here as we are not fully initializing for these unit tests
+        });
+
+        const mockPollMessage = {
+            id: { _serialized: 'pollmsg@c.us_ABC123' },
+            type: MessageTypes.POLL_CREATION,
+            pollOptions: [ // Simplified, actual structure might have more fields like nameSha256
+                { localId: 0, name: 'Option 1' },
+                { localId: 1, name: 'Option 2' },
+            ],
+            // Add allowMultipleAnswers if needed for specific tests
+        };
+
+        it('should successfully vote in a poll', async function() {
+            getMessageByIdStub.resolves(mockPollMessage);
+            pupPageEvaluateStub.resolves(true);
+
+            const result = await client.voteInPoll('pollmsg@c.us_ABC123', [0]);
+            expect(result).to.be.true;
+            expect(pupPageEvaluateStub.calledOnceWith(sinon.match.func, 'pollmsg@c.us_ABC123', [0], 'client@c.us')).to.be.true;
+        });
+
+        it('should throw an error if poll message is not found', async function() {
+            getMessageByIdStub.resolves(null);
+            await expect(client.voteInPoll('nonexistent@c.us_DEF456', [0]))
+                .to.be.rejectedWith('Poll message not found.');
+        });
+
+        it('should throw an error if the message is not a poll creation message', async function() {
+            const notAPollMessage = { id: { _serialized: 'textmsg@c.us_GHI789' }, type: MessageTypes.TEXT };
+            getMessageByIdStub.resolves(notAPollMessage);
+            await expect(client.voteInPoll('textmsg@c.us_GHI789', [0]))
+                .to.be.rejectedWith('Message is not a poll creation message.');
+        });
+
+        it('should throw an error if selectedOptionLocalIds is not an array', async function() {
+            getMessageByIdStub.resolves(mockPollMessage);
+            await expect(client.voteInPoll('pollmsg@c.us_ABC123', 'not-an-array'))
+                .to.be.rejectedWith('selectedOptionLocalIds must be an array of numbers.');
+        });
+
+        it('should throw an error if selectedOptionLocalIds contains non-numbers', async function() {
+            getMessageByIdStub.resolves(mockPollMessage);
+            await expect(client.voteInPoll('pollmsg@c.us_ABC123', [0, 'one', 2]))
+                .to.be.rejectedWith('selectedOptionLocalIds must be an array of numbers.');
+        });
+
+        it('should return false if pupPage.evaluate resolves to false (internal WWebJS failure)', async function() {
+            getMessageByIdStub.resolves(mockPollMessage);
+            pupPageEvaluateStub.resolves(false);
+
+            const result = await client.voteInPoll('pollmsg@c.us_ABC123', [0]);
+            expect(result).to.be.false;
+        });
+
+        it('should propagate error if pupPage.evaluate rejects', async function() {
+            getMessageByIdStub.resolves(mockPollMessage);
+            const evalError = new Error('Puppeteer evaluation failed');
+            pupPageEvaluateStub.rejects(evalError);
+
+            await expect(client.voteInPoll('pollmsg@c.us_ABC123', [0]))
+                .to.be.rejectedWith(evalError);
+        });
+
+        it('should handle Message object as input for messageId', async function() {
+            // getMessageByIdStub should not be called if a Message object is passed
+            pupPageEvaluateStub.resolves(true);
+
+            const result = await client.voteInPoll(mockPollMessage, [1]);
+            expect(result).to.be.true;
+            expect(getMessageByIdStub.called).to.be.false; // Verify it wasn't called
+            expect(pupPageEvaluateStub.calledOnceWith(sinon.match.func, 'pollmsg@c.us_ABC123', [1], 'client@c.us')).to.be.true;
+        });
+
+    });
 });

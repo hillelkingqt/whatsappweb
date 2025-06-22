@@ -1,4 +1,4 @@
-const { Client, Location, Poll, List, Buttons, LocalAuth } = require('./index');
+const { Client, Location, Poll, List, Buttons, LocalAuth, MessageTypes } = require('./index');
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -372,6 +372,31 @@ client.on('message', async msg => {
                 ]
             })
         );
+    } else if (msg.body.startsWith('!votepoll')) {
+        if (msg.hasQuotedMsg) {
+            const quotedMsg = await msg.getQuotedMessage();
+            if (quotedMsg.type === MessageTypes.POLL_CREATION) {
+                // Example: Vote for the first option (localId 0)
+                // You might want to parse desired option from msg.body, e.g., "!votepoll 1" for the second option.
+                const optionToVoteFor = [0]; // localId of the first option
+
+                try {
+                    const result = await client.voteInPoll(quotedMsg.id._serialized, optionToVoteFor);
+                    if (result) {
+                        msg.reply(`Successfully voted for option(s) ${optionToVoteFor.join(', ')} in the poll!`);
+                    } else {
+                        msg.reply('Failed to vote in the poll. The message might not be a valid poll or the option is invalid.');
+                    }
+                } catch (error) {
+                    console.error('Error voting in poll:', error);
+                    msg.reply(`An error occurred while trying to vote: ${error.message}`);
+                }
+            } else {
+                msg.reply('The replied message is not a poll.');
+            }
+        } else {
+            msg.reply('Please reply to a poll message to use the !votepoll command.');
+        }
     } else if (msg.body === '!edit') {
         if (msg.hasQuotedMsg) {
             const quotedMsg = await msg.getQuotedMessage();
